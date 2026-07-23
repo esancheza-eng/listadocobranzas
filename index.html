@@ -256,8 +256,13 @@ function loadFile(file){
   document.getElementById('fileName').textContent='⏳ Cargando '+file.name+'…';
   const reader=new FileReader();
   reader.onload=e=>{
-    const wb=XLSX.read(e.target.result,{type:'array',cellDates:true});
-    rawData=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:null});
+    const wb=XLSX.read(e.target.result,{type:'array',cellDates:false,raw:false});
+    // Also read with cellDates for proper date parsing
+    const wb2=XLSX.read(e.target.result,{type:'array',cellDates:true,raw:false});
+    const rawD=XLSX.utils.sheet_to_json(wb2.Sheets[wb2.SheetNames[0]],{defval:null});
+    // Merge: use rawD for dates, wb for numbers
+    const rawN=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:null});
+    rawData=rawD.map((r,i)=>{const n=rawN[i]||{};return Object.assign({},r,{'Nro Vencimiento Final':n['Nro Vencimiento Final'],'Plazo Crédito':n['Plazo Crédito'],'Saldo Cuota':n['Saldo Cuota'],'Saldo Crédito Final':n['Saldo Crédito Final'],'Valor Cuota':n['Valor Cuota']});});
     document.getElementById('fileName').textContent='✅ '+file.name+' · '+rawData.length.toLocaleString()+' filas';
     buildFilters();
     ['filtersCard','processCard'].forEach(id=>document.getElementById(id).style.display='');
@@ -279,7 +284,7 @@ function buildFilters(){
     if(r['Tienda Factura'])sets.tifac.add(r['Tienda Factura'].toString().trim());
     if(r['Tienda Cupo'])sets.ticupo.add(r['Tienda Cupo'].toString().trim());
     const nv=r['Nro Vencimiento Final'];
-    if(nv!==null&&nv!==undefined&&nv!==''){const p=parseInt(nv);if(!isNaN(p))sets.nrovenc.add(String(p));}
+    if(nv!==null&&nv!==undefined&&nv!==''){const p=Math.round(Number(nv));if(!isNaN(p))sets.nrovenc.add(String(p));}
     if(r['Línea Producto'])sets.linea.add(r['Línea Producto'].toString().trim());
   });
   // Date trees
@@ -460,7 +465,7 @@ function processData(){
       const ori=r['Origen Factura']?r['Origen Factura'].toString().trim():'(Sin Origen)';
       const tif=r['Tienda Factura']?r['Tienda Factura'].toString().trim():'';
       const tic=r['Tienda Cupo']?r['Tienda Cupo'].toString().trim():'';
-      const _nvr=r['Nro Vencimiento Final'];const _nvp=(_nvr!==null&&_nvr!==undefined&&_nvr!=='')?parseInt(_nvr):NaN;const nv=isNaN(_nvp)?'':String(_nvp);
+      const _nvr=r['Nro Vencimiento Final'];const _nvp=(_nvr!==null&&_nvr!==undefined&&_nvr!=='')?Math.round(Number(_nvr)):NaN;const nv=isNaN(_nvp)?'':String(_nvp);
       const lin=r['Línea Producto']?r['Línea Producto'].toString().trim():'';
       return (!i||selIni.has(i))&&(!f||selFin.has(f))
         &&selOri.has(ori)
