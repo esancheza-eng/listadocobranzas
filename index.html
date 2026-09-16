@@ -174,6 +174,15 @@
         <div class="chk-list" id="chk-nrovenc"></div>
       </div>
 
+      <div class="filter-block">
+        <div class="filter-label">📊 Calificación Mensual
+          <span class="lnk" onclick="saChk('calm',true)">Todo</span>
+          <span class="lnk" onclick="saChk('calm',false)">Ninguno</span>
+        </div>
+        <input class="chk-search" placeholder="🔍 Buscar…" oninput="searchChk('calm',this.value)"/>
+        <div class="chk-list" id="chk-calm"></div>
+      </div>
+
       <div class="filter-block" style="grid-column:1/-1">
         <div class="filter-label">📦 Línea Producto
           <span class="lnk" onclick="saChk('linea',true)">Todo</span>
@@ -223,7 +232,7 @@ const OUT_COLS=[
   'Nombre del Cliente','Número de Identificación','Dirección Principal','Teléfono Celular',
   'Zona del Cliente Final','Nombre del Cobrador Actual',
   'Calificación Cliente Mensual','Calificación Cliente Diaria',
-  'Fecha de Vencimiento Final Más Antigua','Suma Saldo Cuota (Fecha Antigua)',
+  'Fecha de Vencimiento Inicial','Fecha de Vencimiento Final Más Antigua','Suma Saldo Cuota (Fecha Antigua)',
   'Suma Saldo Crédito Final Total','Suma Valor Cuota Total',
   'Calificación Concatenada','Categoría del Cliente'
 ];
@@ -276,7 +285,7 @@ function loadFile(file){
 
 // ── BUILD FILTERS ─────────────────────────────────────────────────────────────
 function buildFilters(){
-  const sets={ini:new Set(),fin:new Set(),origen:new Set(),tifac:new Set(),ticupo:new Set(),nrovenc:new Set(),linea:new Set()};
+  const sets={ini:new Set(),fin:new Set(),origen:new Set(),tifac:new Set(),ticupo:new Set(),nrovenc:new Set(),linea:new Set(),calm:new Set()};
   rawData.forEach(r=>{
     const i=toYMD(parseDate(r['Fecha Vencimiento Inicial']));if(i)sets.ini.add(i);
     const f=toYMD(parseDate(r['Fecha Vencimiento Final']));if(f)sets.fin.add(f);
@@ -286,6 +295,9 @@ function buildFilters(){
     const nv=r['Nro Vencimiento Final'];
     if(nv!==null&&nv!==undefined&&nv!==''){const p=Math.round(Number(nv));if(!isNaN(p))sets.nrovenc.add(String(p));}
     if(r['Línea Producto'])sets.linea.add(r['Línea Producto'].toString().trim());
+    const cm=r['Calificación Cliente Mensual'];
+    if(cm!==null&&cm!==undefined&&String(cm).trim()!=='')sets.calm.add(String(cm).trim().toUpperCase());
+    else sets.calm.add('(Sin Calificación)');
   });
   // Date trees
   treeMap.ini=buildDateMap(sets.ini); renderTree('ini');
@@ -295,6 +307,11 @@ function buildFilters(){
   buildChk('tifac',[...sets.tifac].sort());
   buildChk('ticupo',[...sets.ticupo].sort());
   buildChk('nrovenc',[...sets.nrovenc].sort((a,b)=>+a-+b));
+  const calOrder=['AA','A','B','C','D','E','E1','E2'];
+  buildChk('calm',[...sets.calm].sort((a,b)=>{
+    const ia=calOrder.indexOf(a),ib=calOrder.indexOf(b);
+    if(ia>=0&&ib>=0)return ia-ib;if(ia>=0)return -1;if(ib>=0)return 1;return a.localeCompare(b);
+  }));
   buildLineaChk([...sets.linea].sort());
 }
 
@@ -458,6 +475,7 @@ function processData(){
     const selTiCupo=getSelChk('chk-ticupo');
     const selNroVenc=getSelChk('chk-nrovenc');
     const selLinea=getSelChk('chk-linea');
+    const selCalm=getSelChk('chk-calm');
 
     const filtered=rawData.filter(r=>{
       const i=toYMD(parseDate(r['Fecha Vencimiento Inicial']));
@@ -467,12 +485,14 @@ function processData(){
       const tic=r['Tienda Cupo']?r['Tienda Cupo'].toString().trim():'';
       const _nvr=r['Nro Vencimiento Final'];const _nvp=(_nvr!==null&&_nvr!==undefined&&_nvr!=='')?Math.round(Number(_nvr)):NaN;const nv=isNaN(_nvp)?'':String(_nvp);
       const lin=r['Línea Producto']?r['Línea Producto'].toString().trim():'';
+      const cm=r['Calificación Cliente Mensual']?String(r['Calificación Cliente Mensual']).trim().toUpperCase():'(Sin Calificación)';
       return (!i||selIni.has(i))&&(!f||selFin.has(f))
         &&selOri.has(ori)
         &&(!tif||selTiFac.has(tif))
         &&(!tic||selTiCupo.has(tic))
         &&(!nv||selNroVenc.has(nv))
-        &&(!lin||selLinea.has(lin));
+        &&(!lin||selLinea.has(lin))
+        &&selCalm.has(cm);
     });
 
     setProgress(30,'Agrupando… ('+filtered.length.toLocaleString()+' filas)');
@@ -486,11 +506,13 @@ function processData(){
             dir:r['Dirección Principal']||'',tel:r['Telefono Celular']||'',
             zona:r['Zona Cliente Final']||'',cobrador:r['Nombre Cobrador Actual']||'',
             cal_m:r['Calificación Cliente Mensual']||'',cal_d:r['Calificación Cliente Diaria']||'',
-            min_fecha:null,rows:[]
+            min_fecha:null,min_fecha_ini:null,rows:[]
           };
         }
         const fv=parseDate(r['Fecha Vencimiento Final']);
         if(fv&&(!clients[id].min_fecha||fv<clients[id].min_fecha))clients[id].min_fecha=fv;
+        const fi=parseDate(r['Fecha Vencimiento Inicial']);
+        if(fi&&(!clients[id].min_fecha_ini||fi<clients[id].min_fecha_ini))clients[id].min_fecha_ini=fi;
         clients[id].rows.push(r);
       });
 
@@ -520,6 +542,7 @@ function processData(){
             'Nombre del Cobrador Actual':c.cobrador,
             'Calificación Cliente Mensual':c.cal_m,
             'Calificación Cliente Diaria':c.cal_d,
+            'Fecha de Vencimiento Inicial':c.min_fecha_ini?toDMY(c.min_fecha_ini):'',
             'Fecha de Vencimiento Final Más Antigua':c.min_fecha?toDMY(c.min_fecha):'',
             'Suma Saldo Cuota (Fecha Antigua)':+sumaCuota.toFixed(2),
             'Suma Saldo Crédito Final Total':+sumaSaldo.toFixed(2),
@@ -551,7 +574,7 @@ function processData(){
 
 // ── TABLE PREVIEW ─────────────────────────────────────────────────────────────
 function renderTable(data){
-  const cols=['Nombre','Identificación','Dirección','Teléfono','Zona','Cobrador','Cal.M','Cal.D','Fecha Venc.','Saldo Cuota','Saldo Crédito','Valor Cuota','Calif.','Categoría'];
+  const cols=['Nombre','Identificación','Dirección','Teléfono','Zona','Cobrador','Cal.M','Cal.D','F. Venc. Ini.','F. Venc. Fin.','Saldo Cuota','Saldo Crédito','Valor Cuota','Calif.','Categoría'];
   document.querySelector('#prevTable thead').innerHTML='<tr>'+cols.map(c=>`<th>${c}</th>`).join('')+'</tr>';
   document.querySelector('#prevTable tbody').innerHTML=data.map(r=>{
     const cat=r['Categoría del Cliente'];
@@ -563,6 +586,7 @@ function renderTable(data){
       <td>${r['Zona del Cliente Final']}</td><td>${r['Nombre del Cobrador Actual']}</td>
       <td style="text-align:center">${r['Calificación Cliente Mensual']}</td>
       <td style="text-align:center">${r['Calificación Cliente Diaria']}</td>
+      <td>${r['Fecha de Vencimiento Inicial']}</td>
       <td>${r['Fecha de Vencimiento Final Más Antigua']}</td>
       <td style="text-align:right">${r['Suma Saldo Cuota (Fecha Antigua)'].toFixed(2)}</td>
       <td style="text-align:right">${r['Suma Saldo Crédito Final Total'].toFixed(2)}</td>
@@ -579,7 +603,7 @@ function downloadExcel(){
   const ws=XLSX.utils.json_to_sheet(processedData,{header:OUT_COLS});
 
   // Column widths
-  ws['!cols']=[38,22,42,16,38,38,12,12,22,18,18,18,14,16].map(w=>({wch:w}));
+  ws['!cols']=[38,22,42,16,38,38,12,12,18,22,18,18,18,14,16].map(w=>({wch:w}));
 
   // Styles via SheetJS — add fill colors per row
   const rng=XLSX.utils.decode_range(ws['!ref']);
